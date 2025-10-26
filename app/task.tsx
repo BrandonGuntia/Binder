@@ -1,19 +1,65 @@
 import Layout from '@/components/Layout';
 import { useDarkMode } from '@/contexts/DarkModeContext';
+import * as Location from 'expo-location';
 import { Stack } from 'expo-router';
 import React from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View, Alert, ScrollView } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
-import * as Location from 'expo-location';
+import { supabase } from '../lib/supabaseClient';
 
 export default function Task() {
   const { isDarkMode } = useDarkMode();
-  const [newTask, setTask] = React.useState({});
-  const [selectedLocation, setSelectedLocation] = React.useState<{
-    latitude: number;
-    longitude: number;
-  } | null>(null);
-  const [searchQuery, setSearchQuery] = React.useState('');
+
+  // Single state for all user input (for Supabase)
+  const [newTask, setNewTask] = React.useState({
+    userName: "",
+    taskTitle: "",
+    location: {
+      latitude: null as number | null,
+      longitude: null as number | null,
+      address: ""
+    },
+    description: ""
+  });
+
+  const handleSubmit = async () => {
+    // Validate required fields
+    if (!newTask.userName.trim()) {
+      Alert.alert('Validation Error', 'Please enter your name');
+      return;
+    }
+    if (!newTask.taskTitle.trim()) {
+      Alert.alert('Validation Error', 'Please enter a task title');
+      return;
+    }
+
+    try {
+      const { error } = await supabase.from('Tasks').insert([newTask]);
+
+      if (error) {
+        console.error('Error adding task:', error.message);
+        Alert.alert('Error', 'Failed to add task. Please try again.');
+      } else {
+        // Clear the form
+        setNewTask({
+          userName: "",
+          taskTitle: "",
+          location: {
+            latitude: null,
+            longitude: null,
+            address: ""
+          },
+          description: ""
+        });
+        Alert.alert('Success', 'Task added successfully!');
+      }
+    } catch (error) {
+      console.error('Unexpected error:', error);
+      Alert.alert('Error', 'An unexpected error occurred');
+    }
+  };
+
+  // Map-related states (only for autocomplete UI)
   const [suggestions, setSuggestions] = React.useState<Array<{
     address: string;
     latitude: number;
@@ -23,9 +69,46 @@ export default function Task() {
   const mapRef = React.useRef<MapView>(null);
   const searchTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleMapPress = (event: any) => {
+  const handleMapPress = async (event: any) => {
     const { coordinate } = event.nativeEvent;
-    setSelectedLocation(coordinate);
+
+    try {
+      // Fetch the nearest address using reverse geocoding
+      const geocodedAddress = await Location.reverseGeocodeAsync({
+        latitude: coordinate.latitude,
+        longitude: coordinate.longitude
+      });
+
+      let addressName = "Unknown Location";
+      if (geocodedAddress && geocodedAddress.length > 0) {
+        const { name, street, city, region, country } = geocodedAddress[0];
+        // Use name if available (e.g., "Golden Gate Park"), otherwise use street
+        const primaryLocation = name || street;
+        addressName = [primaryLocation, city, region, country]
+          .filter(Boolean)
+          .join(', ');
+      }
+
+      // Update newTask with location and fetched address
+      setNewTask(prev => ({
+        ...prev,
+        location: {
+          latitude: coordinate.latitude,
+          longitude: coordinate.longitude,
+          address: addressName
+        }
+      }));
+    } catch (error) {
+      // If geocoding fails, still set the coordinates but with a default address
+      setNewTask(prev => ({
+        ...prev,
+        location: {
+          latitude: coordinate.latitude,
+          longitude: coordinate.longitude,
+          address: "Unknown Location"
+        }
+      }));
+    }
   };
 
   const handleRecenter = async () => {
@@ -49,15 +132,45 @@ export default function Task() {
         longitudeDelta: 0.0421,
       }, 1000);
 
-      // Optionally set the selected location to user's current location
-      setSelectedLocation(userLocation);
+      // Fetch the nearest address using reverse geocoding
+      const geocodedAddress = await Location.reverseGeocodeAsync({
+        latitude: userLocation.latitude,
+        longitude: userLocation.longitude
+      });
+
+      let addressName = "Current Location";
+      if (geocodedAddress && geocodedAddress.length > 0) {
+        const { name, street, city, region, country } = geocodedAddress[0];
+        // Use name if available (e.g., "Golden Gate Park"), otherwise use street
+        const primaryLocation = name || street;
+        addressName = [primaryLocation, city, region, country]
+          .filter(Boolean)
+          .join(', ');
+      }
+
+      // Set the location in newTask with fetched address
+      setNewTask(prev => ({
+        ...prev,
+        location: {
+          latitude: userLocation.latitude,
+          longitude: userLocation.longitude,
+          address: addressName
+        }
+      }));
     } catch (error) {
       Alert.alert('Error', 'Failed to get your location');
     }
   };
 
   const handleSearchQueryChange = (text: string) => {
-    setSearchQuery(text);
+    // Update address in newTask
+    setNewTask(prev => ({
+      ...prev,
+      location: {
+        ...prev.location,
+        address: text
+      }
+    }));
 
     // Clear previous timeout
     if (searchTimeoutRef.current) {
@@ -122,7 +235,6 @@ export default function Task() {
   };
 
   const handleSuggestionSelect = (suggestion: { address: string; latitude: number; longitude: number }) => {
-    setSearchQuery(suggestion.address);
     setShowSuggestions(false);
 
     const searchedLocation = {
@@ -137,12 +249,19 @@ export default function Task() {
       longitudeDelta: 0.0421,
     }, 1000);
 
-    // Set the selected location
-    setSelectedLocation(searchedLocation);
+    // Update newTask with location
+    setNewTask(prev => ({
+      ...prev,
+      location: {
+        latitude: suggestion.latitude,
+        longitude: suggestion.longitude,
+        address: suggestion.address
+      }
+    }));
   };
 
   const handleLocationSearch = async () => {
-    if (!searchQuery.trim()) {
+    if (!newTask.location.address.trim()) {
       Alert.alert('Empty Search', 'Please enter a location to search');
       return;
     }
@@ -150,7 +269,7 @@ export default function Task() {
     setShowSuggestions(false);
 
     try {
-      const geocodedLocations = await Location.geocodeAsync(searchQuery);
+      const geocodedLocations = await Location.geocodeAsync(newTask.location.address);
 
       if (geocodedLocations.length === 0) {
         Alert.alert('Not Found', 'Location not found. Please try a different search.');
@@ -170,8 +289,15 @@ export default function Task() {
         longitudeDelta: 0.0421,
       }, 1000);
 
-      // Set the selected location
-      setSelectedLocation(searchedLocation);
+      // Update newTask with location
+      setNewTask(prev => ({
+        ...prev,
+        location: {
+          ...prev.location,
+          latitude: searchedLocation.latitude,
+          longitude: searchedLocation.longitude
+        }
+      }));
     } catch (error) {
       Alert.alert('Error', 'Failed to search location');
     }
@@ -199,6 +325,10 @@ export default function Task() {
               style={[styles.input, isDarkMode && styles.inputDark]}
               placeholder="Enter Your Name"
               placeholderTextColor={isDarkMode ? "#666" : "#999"}
+              value={newTask.userName}
+              onChangeText={(text) =>
+                setNewTask((prev) => ({...prev, userName: text}))
+              }
             />
           </View>
           <View style={styles.inputGroup}>
@@ -207,38 +337,30 @@ export default function Task() {
               style={[styles.input, isDarkMode && styles.inputDark]}
               placeholder="Enter Task Title"
               placeholderTextColor={isDarkMode ? "#666" : "#999"}
+              value={newTask.taskTitle}
+              onChangeText={(text) =>
+                setNewTask((prev) => ({...prev, taskTitle: text}))
+              }
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={[styles.label, isDarkMode && styles.labelDark]}>Description</Text>
+            <TextInput
+              style={[styles.descriptionInput, isDarkMode && styles.descriptionInputDark]}
+              placeholder="Describe your task"
+              placeholderTextColor={isDarkMode ? "#666" : "#999"}
+              multiline={true}
+              textAlignVertical="top"
+              value={newTask.description}
+              onChangeText={(text) =>
+                setNewTask((prev) => ({...prev, description: text}))
+              }
             />
           </View>
 
           <View style={styles.inputGroup}>
             <Text style={[styles.label, isDarkMode && styles.labelDark]}>Location (Tap on map)</Text>
-            <View style={styles.mapContainer}>
-              <MapView
-                ref={mapRef}
-                style={styles.mapView}
-                initialRegion={{
-                  latitude: 37.78825,
-                  longitude: -122.4324,
-                  latitudeDelta: 0.0922,
-                  longitudeDelta: 0.0421,
-                }}
-                onPress={handleMapPress}
-              >
-                {selectedLocation && (
-                  <Marker coordinate={selectedLocation} />
-                )}
-              </MapView>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.recenterButton,
-                  isDarkMode && styles.recenterButtonDark,
-                  pressed && styles.recenterButtonPressed
-                ]}
-                onPress={handleRecenter}
-              >
-                <Text style={styles.recenterButtonText}>📍</Text>
-              </Pressable>
-            </View>
 
             {/* Location Search Bar */}
             <View style={styles.searchBarContainer}>
@@ -247,7 +369,7 @@ export default function Task() {
                   style={[styles.searchInput, isDarkMode && styles.searchInputDark]}
                   placeholder="Search location (e.g., New York, USA)"
                   placeholderTextColor={isDarkMode ? "#666" : "#999"}
-                  value={searchQuery}
+                  value={newTask.location.address}
                   onChangeText={handleSearchQueryChange}
                   onSubmitEditing={handleLocationSearch}
                   returnKeyType="search"
@@ -290,27 +412,37 @@ export default function Task() {
               </Pressable>
             </View>
 
-            {selectedLocation && (
-              <View style={[styles.coordinatesBox, isDarkMode && styles.coordinatesBoxDark]}>
-                <Text style={[styles.coordinatesText, isDarkMode && styles.coordinatesTextDark]}>
-                  Latitude: {selectedLocation.latitude.toFixed(6)}
-                </Text>
-                <Text style={[styles.coordinatesText, isDarkMode && styles.coordinatesTextDark]}>
-                  Longitude: {selectedLocation.longitude.toFixed(6)}
-                </Text>
-              </View>
-            )}
-          </View>
+            <View style={styles.mapContainer}>
+              <MapView
+                ref={mapRef}
+                style={styles.mapView}
+                initialRegion={{
+                  latitude: 37.78825,
+                  longitude: -122.4324,
+                  latitudeDelta: 0.0922,
+                  longitudeDelta: 0.0421,
+                }}
+                onPress={handleMapPress}
+              >
+                {newTask.location.latitude && newTask.location.longitude && (
+                  <Marker coordinate={{
+                    latitude: newTask.location.latitude,
+                    longitude: newTask.location.longitude
+                  }} />
+                )}
+              </MapView>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.recenterButton,
+                  isDarkMode && styles.recenterButtonDark,
+                  pressed && styles.recenterButtonPressed
+                ]}
+                onPress={handleRecenter}
+              >
+                <Text style={styles.recenterButtonText}>📍</Text>
+              </Pressable>
+            </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, isDarkMode && styles.labelDark]}>Description</Text>
-            <TextInput
-              style={[styles.descriptionInput, isDarkMode && styles.descriptionInputDark]}
-              placeholder="Describe your task"
-              placeholderTextColor={isDarkMode ? "#666" : "#999"}
-              multiline={true}
-              textAlignVertical="top"
-            />
           </View>
 
           <Pressable
@@ -318,6 +450,7 @@ export default function Task() {
               styles.addButton,
               pressed && styles.addButtonPressed
             ]}
+            onPress={handleSubmit}
           >
             <Text style={styles.addButtonText}>Add Task</Text>
           </Pressable>
@@ -389,7 +522,7 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   mapContainer: {
-    height: 200,
+    height: 400,
     borderRadius: 8,
     overflow: 'hidden',
     borderWidth: 1,
