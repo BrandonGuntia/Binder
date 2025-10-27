@@ -106,7 +106,12 @@ const darkMapStyle = [
 
 export default function Dashboard() {
   const { isDarkMode, toggleDarkMode } = useDarkMode();
-  const [userLocation, setUserLocation] = useState(null);
+  const [userLocation, setUserLocation] = useState<{
+    latitude: number;
+    longitude: number;
+    latitudeDelta: number;
+    longitudeDelta: number;
+  } | null>(null);
 
   // Request location permissions and get user's current location
   useEffect(() => {
