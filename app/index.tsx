@@ -63,7 +63,7 @@ export default function Index() {
               styles.button,
               pressed && styles.buttonPressed
             ]}
-            onPress={() => router.push('dashboard')}
+            onPress={() => router.push('/dashboard')}
           >
             <Text style={styles.buttonText}>Login</Text>
           </Pressable>
