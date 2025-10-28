@@ -5,7 +5,7 @@ export default class user_setting extends Component {
   render() {
     return (
       <View>
-        <Text>user_setting</Text>
+        <Text>Profile</Text>
       </View>
     )
   }

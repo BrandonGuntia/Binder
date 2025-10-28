@@ -2,8 +2,9 @@ import Layout from '@/components/Layout';
 import { useDarkMode } from '@/contexts/DarkModeContext';
 import * as Location from 'expo-location';
 import { Stack } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  Dimensions,
   ImageBackground,
   Pressable,
   ScrollView,
@@ -113,6 +114,31 @@ export default function Dashboard() {
     longitudeDelta: number;
   } | null>(null);
 
+  // For carousel navigation
+  const scrollViewRef = useRef<ScrollView>(null);
+  const [currentPage, setCurrentPage] = useState(0);
+  const totalPages = 4; // Number of content pages
+  const screenWidth = Dimensions.get('window').width - 20; // Account for padding
+
+  // Navigation handlers for carousel
+  const handleLeftButton = () => {
+    const newPage = currentPage === 0 ? totalPages - 1 : currentPage - 1;
+    setCurrentPage(newPage);
+    scrollViewRef.current?.scrollTo({
+      x: newPage * screenWidth,
+      animated: true,
+    });
+  };
+
+  const handleRightButton = () => {
+    const newPage = currentPage === totalPages - 1 ? 0 : currentPage + 1;
+    setCurrentPage(newPage);
+    scrollViewRef.current?.scrollTo({
+      x: newPage * screenWidth,
+      animated: true,
+    });
+  };
+
   // Request location permissions and get user's current location
   useEffect(() => {
     (async () => {
@@ -142,18 +168,70 @@ export default function Dashboard() {
           >
          
             
-          <View style={styles.mapContainer}>
-          {userLocation && (
-            <MapView
-              style={{ flex: 1, borderRadius: 12 }}
-              provider={PROVIDER_GOOGLE}
-              initialRegion={userLocation}
-              showsUserLocation={true}
-              showsMyLocationButton={true}
-              customMapStyle={darkMapStyle}
-            />
-          )}
-        </View>
+          <View style={styles.headContainer}>
+            <View style={styles.headContentContainer}>
+              <Pressable
+                style={styles.headContentLeftButton}
+                onPress={handleLeftButton}
+              >
+                <Text style={styles.arrowText}>{'<'}</Text>
+              </Pressable>
+              <Pressable
+                style={styles.headContentRightButton}
+                onPress={handleRightButton}
+              >
+                <Text style={styles.arrowText}>{'>'}</Text>
+              </Pressable>
+
+              <ScrollView
+                ref={scrollViewRef}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                scrollEventThrottle={16}
+                onMomentumScrollEnd={(event) => {
+                  const pageIndex = Math.round(event.nativeEvent.contentOffset.x / screenWidth);
+                  setCurrentPage(pageIndex);
+                }}
+                style={styles.carouselScrollView}
+              >
+                {/* Page 1 - Map */}
+                <View style={[styles.contentPage, { width: screenWidth }]}>
+                  {userLocation && (
+                    <MapView
+                      style={styles.mapContent}
+                      provider={PROVIDER_GOOGLE}
+                      initialRegion={userLocation}
+                      showsUserLocation={true}
+                      showsMyLocationButton={true}
+                      customMapStyle={darkMapStyle}
+                    />
+                  )}
+                </View>
+
+                {/* Page 2 - Content 2 */}
+                <View style={[styles.contentPage, { width: screenWidth }]}>
+                  <View style={styles.placeholderContent}>
+                    <Text style={styles.placeholderText}>Content 2</Text>
+                  </View>
+                </View>
+
+                {/* Page 3 - Content 3 */}
+                <View style={[styles.contentPage, { width: screenWidth }]}>
+                  <View style={styles.placeholderContent}>
+                    <Text style={styles.placeholderText}>Content 3</Text>
+                  </View>
+                </View>
+
+                {/* Page 4 - Content 4 */}
+                <View style={[styles.contentPage, { width: screenWidth }]}>
+                  <View style={styles.placeholderContent}>
+                    <Text style={styles.placeholderText}>Content 4</Text>
+                  </View>
+                </View>
+              </ScrollView>
+            </View>
+           </View>
 
         {/* 5 Circles Container */}
         <View style={styles.circlesContainer}>
@@ -230,13 +308,83 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     
   },
-  mapContainer: {
+  headContainer: {
     height: 350,
     borderRadius: 12,
     width: '100%',
     marginTop: 5,
     overflow: 'hidden',
     paddingTop: 80,
+    paddingLeft : 10,
+    paddingRight: 10,
+  },
+  headContentContainer:{
+    height: 260,
+    borderRadius: 12,
+    marginBottom: 10,
+    borderColor: '#d8d4d4ff',
+    borderWidth: 5,
+    position: 'relative',
+  },
+  headContentLeftButton:{
+    position: 'absolute',
+    left: -13,
+    top: '40%',
+    transform: [{ translateY: -25 }],
+    backgroundColor: 'rgba(255, 255, 255, 1)',
+    borderRadius: 8,
+    borderColor: '#d8d4d4ff',
+    borderWidth: 3,
+    height: 100,
+    width: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  headContentRightButton:{
+    position: 'absolute',
+    right: -13,
+    top: '40%',
+    transform: [{ translateY: -25 }],
+    backgroundColor: 'rgba(255, 255, 255, 1)',
+    borderRadius: 8,
+    borderColor: '#d8d4d4ff',
+    borderWidth: 3,
+    height: 100,
+    width: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  arrowText: {
+    color: '#2c3e50',
+    fontSize: 20,
+    fontWeight: '900',
+    textShadowColor: 'rgba(0, 0, 0, 0.1)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
+    letterSpacing: 0,
+  },
+  carouselScrollView: {
+    flex: 1,
+    borderRadius: 10,
+  },
+  contentPage: {
+    height: '100%',
+  },
+  mapContent:{
+    flex: 1,
+  },
+  placeholderContent: {
+    flex: 1,
+    backgroundColor: '#4A90E2',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  placeholderText: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: 'bold',
   },
   circlesContainer: {
     flexDirection: 'row',
